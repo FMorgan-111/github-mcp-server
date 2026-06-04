@@ -13,13 +13,15 @@ class TestTools(unittest.TestCase):
         # Setup mock
         mock_client = Mock()
         mock_client_class.return_value = mock_client
-        mock_client.search_code.return_value = [
-            {
-                'path': 'src/main.py',
-                'repo': 'owner/test-repo',
-                'url': 'https://github.com/owner/test-repo/blob/main/src/main.py'
-            }
-        ]
+        mock_client.search_code.return_value = {
+            "items": [
+                {
+                    'path': 'src/main.py',
+                    'repo': 'owner/test-repo',
+                    'url': 'https://github.com/owner/test-repo/blob/main/src/main.py'
+                }
+            ]
+        }
 
         # Call function
         result = search_code("def main", "owner/test-repo")
@@ -55,7 +57,7 @@ index 1234567..abcdefg 100644
         """Test search_code returns proper message for no results"""
         from unittest.mock import patch, Mock
         with patch('src.tools.GitHubClient') as mock_cls:
-            mock_cls.return_value.search_code.return_value = []
+            mock_cls.return_value.search_code.return_value = {"items": []}
             result = search_code("nonexistent", "owner/repo")
             self.assertIn("No results", result)
 

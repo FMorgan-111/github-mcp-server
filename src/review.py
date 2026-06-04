@@ -95,4 +95,13 @@ def review_diff(diff_text: str) -> List[Dict]:
             elif in_function:
                 function_lines += 1
 
+    # Check final function if still in one
+    if in_function and function_lines > 80:
+        issues.append({
+            'severity': 'warning',
+            'line': current_line - function_lines,
+            'message': f'Function is {function_lines} lines long - consider breaking it down',
+            'rule': 'function-length'
+        })
+
     return issues

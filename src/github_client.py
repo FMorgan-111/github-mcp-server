@@ -1,6 +1,6 @@
 """GitHub API client wrapper using httpx"""
 import httpx
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 
 
 class GitHubClient:
@@ -23,14 +23,16 @@ class GitHubClient:
                 )
                 response.raise_for_status()
                 data = response.json()
-                return [
-                    {
-                        "path": item["path"],
-                        "repo": item["repository"]["full_name"],
-                        "url": item["html_url"]
-                    }
-                    for item in data.get("items", [])
-                ]
+                return {
+                    "items": [
+                        {
+                            "path": item["path"],
+                            "repo": item["repository"]["full_name"],
+                            "url": item["html_url"]
+                        }
+                        for item in data.get("items", [])
+                    ]
+                }
         except Exception as e:
             return {"error": f"Search failed: {str(e)}"}
 

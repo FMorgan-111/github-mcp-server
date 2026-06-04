@@ -14,17 +14,18 @@ def search_code(query: str, repo: str = None) -> str:
     client = GitHubClient(get_github_token(), get_github_api_base())
     result = client.search_code(query, repo)
 
-    if "error" in result:
+    if isinstance(result, dict) and "error" in result:
         return f"Error: {result['error']}"
 
-    if not result:
+    items = result.get("items", [])
+    if not items:
         return "No results found"
 
     output = []
-    for item in result[:10]:  # Limit to first 10 results
+    for item in items[:10]:  # Limit to first 10 results
         output.append(f"• {item['path']} in {item['repo']}\n  {item['url']}")
 
-    return f"Found {len(result)} results:\n" + "\n\n".join(output)
+    return f"Found {len(items)} results:\n" + "\n\n".join(output)
 
 
 @mcp.tool()
