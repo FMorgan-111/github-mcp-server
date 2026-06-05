@@ -87,3 +87,25 @@ class GitHubClient:
                 return response.json()
         except Exception as e:
             return {"error": f"Create PR failed: {str(e)}"}
+
+    def create_review_comment(
+        self, repo: str, pr_number: int, body: str,
+        commit_id: str = "", path: str = "", line: int = 0
+    ) -> Dict[str, Any]:
+        """Post a review comment on a PR line."""
+        try:
+            payload = {"body": body}
+            if commit_id and path and line > 0:
+                payload["commit_id"] = commit_id
+                payload["path"] = path
+                payload["line"] = line
+            with httpx.Client(timeout=20) as client:
+                resp = client.post(
+                    f"{self.base_url}/repos/{repo}/pulls/{pr_number}/reviews",
+                    headers=self.headers,
+                    json=payload,
+                )
+                resp.raise_for_status()
+                return resp.json()
+        except Exception as e:
+            return {"error": f"Review comment failed: {str(e)}"}

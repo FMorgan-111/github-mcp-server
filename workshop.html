@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Agent Workshop</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/xterm.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/xterm.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xterm-addon-fit/0.8.0/xterm-addon-fit.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #0a0e14;
+  --panel-bg: #0d1117;
+  --border: #1e2a3a;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --orange: #d29922;
+  --pink: #f78166;
+  --text: #e6edf3;
+  --text-dim: #8b949e;
+  --header-bg: #161b22;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Header ── */
+.header {
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 50px;
+}
+.header h1 {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  background: linear-gradient(135deg, var(--accent), var(--green));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.header .status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block;
+  animation: pulse 2s infinite;
+}
+.header .status-dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.header .status-dot.offline { background: var(--pink); }
+.header .status-bar {
+  margin-left: auto;
+  display: flex;
+  gap: 20px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.header .status-bar span { display: flex; align-items: center; gap: 6px; }
+.budget { color: var(--orange); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ── Layout ── */
+.workspace {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  height: calc(100vh - 50px);
+  gap: 1px;
+  background: var(--border);
+}
+
+.panel {
+  background: var(--panel-bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.panel-header {
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 14px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  user-select: none;
+}
+.panel-header .icon { font-size: 14px; }
+.panel-header .name { font-weight: 600; letter-spacing: 0.5px; }
+.panel-header .tag {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: auto;
+}
+.tag-hermes { background: #1f3a5f; color: var(--accent); }
+.tag-cc { background: #3a1f1f; color: var(--pink); }
+.tag-codex { background: #1f3a2f; color: var(--green); }
+
+.panel-body {
+  flex: 1;
+  padding: 8px;
+  overflow: hidden;
+  position: relative;
+}
+.panel-body .xterm {
+  height: 100%;
+}
+.panel-body .xterm-viewport { overflow-y: auto; }
+
+/* Hermes panel spans 2 rows on left */
+.panel-hermes {
+  grid-row: 1 / 3;
+}
+
+/* ── Welcome overlay ── */
+.welcome {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  opacity: 0.15;
+}
+.welcome .logo {
+  font-size: 48px;
+  letter-spacing: 6px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--green), var(--pink));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.welcome .sub {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 8px;
+}
+
+/* ── Right panels ── */
+.panel-cc { grid-column: 2; grid-row: 1; }
+.panel-codex { grid-column: 2; grid-row: 2; }
+
+/* ── Bottom toolbar ── */
+.toolbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  background: var(--header-bg);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 10px;
+  color: var(--text-dim);
+  gap: 16px;
+  z-index: 10;
+}
+.toolbar .key { 
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  padding: 0 5px;
+  border-radius: 2px;
+  font-size: 9px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
+  }
+  .panel-hermes { grid-row: 1; }
+  .panel-cc { grid-column: 1; grid-row: 2; }
+  .panel-codex { grid-column: 1; grid-row: 3; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⎔ AI Agent Workshop</h1>
+  <span class="status-dot online"></span>
+  <div class="status-bar">
+    <span>⎔ Hermes <span class="status-dot online" style="width:6px;height:6px;"></span></span>
+    <span>○ Claude Code <span class="status-dot online" style="width:6px;height:6px;"></span></span>
+    <span>◇ Codex <span class="status-dot online" style="width:6px;height:6px;"></span></span>
+    <span class="budget">¥483.41 / ¥500</span>
+    <span>github-mcp-server</span>
+  </div>
+</div>
+
+<div class="workspace">
+  <!-- Hermes Panel -->
+  <div class="panel panel-hermes">
+    <div class="panel-header">
+      <span class="icon">⎔</span>
+      <span class="name">Hermes Agent</span>
+      <span class="tag tag-hermes">orchestrator</span>
+    </div>
+    <div class="panel-body" id="terminal-hermes"></div>
+    <div class="welcome">
+      <div class="logo">⎔</div>
+      <div class="sub">AI Agent Workshop · v0.1</div>
+    </div>
+  </div>
+
+  <!-- Claude Code Panel -->
+  <div class="panel panel-cc">
+    <div class="panel-header">
+      <span class="icon">○</span>
+      <span class="name">Claude Code</span>
+      <span class="tag tag-cc">claude-sonnet-4</span>
+    </div>
+    <div class="panel-body" id="terminal-cc"></div>
+  </div>
+
+  <!-- Codex Panel -->
+  <div class="panel panel-codex">
+    <div class="panel-header">
+      <span class="icon">◇</span>
+      <span class="name">Codex</span>
+      <span class="tag tag-codex">gpt-5.1-codex</span>
+    </div>
+    <div class="panel-body" id="terminal-codex"></div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <span><span class="key">Tab</span> switch panel</span>
+  <span><span class="key">↑↓</span> scroll</span>
+  <span><span class="key">Ctrl+C</span> interrupt</span>
+  <span>github.com/FMorgan-111/github-mcp-server</span>
+</div>
+
+<script>
+// ── Initialize terminals ──
+const terminals = {};
+
+function createTerminal(containerId, options = {}) {
+  const el = document.getElementById(containerId);
+  const term = new Terminal({
+    cursorBlink: true,
+    cursorStyle: 'block',
+    fontSize: 13,
+    fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+    theme: {
+      background: '#0d1117',
+      foreground: '#e6edf3',
+      cursor: '#58a6ff',
+      selectionBackground: '#264f78',
+      black: '#484f58',
+      red: '#ff7b72',
+      green: '#3fb950',
+      yellow: '#d29922',
+      blue: '#58a6ff',
+      magenta: '#bc8cff',
+      cyan: '#39c5cf',
+      white: '#e6edf3',
+    },
+    ...options,
+  });
+  
+  const fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+  term.open(el);
+  fitAddon.fit();
+  
+  // Resize on window resize
+  window.addEventListener('resize', () => {
+    try { fitAddon.fit(); } catch(e) {}
+  });
+  
+  return { term, fitAddon };
+}
+
+// Hermes terminal
+const hermes = createTerminal('terminal-hermes');
+hermes.term.write('Hermes Agent v0.1\r\n');
+hermes.term.write('Profile: default\r\n');
+hermes.term.write('Model: deepseek-v4-flash\r\n');
+hermes.term.write('\r\n');
+hermes.term.write('  Skills loaded: 150+\r\n');
+hermes.term.write('  MCP servers: github-agent\r\n');
+hermes.term.write('  Cron jobs: 4 active\r\n');
+hermes.term.write('\r\n');
+hermes.term.write('  $ ');
+
+// CC terminal
+const cc = createTerminal('terminal-cc');
+cc.term.write('Claude Code v2.1.161\r\n');
+cc.term.write('Model: claude-sonnet-4-20250514\r\n');
+cc.term.write('Proxy: linoapi.com.cn\r\n');
+cc.term.write('MCP: github-agent connected\r\n');
+cc.term.write('\r\n');
+cc.term.write('  ○ Ready\r\n');
+
+// Codex terminal
+const codex = createTerminal('terminal-codex');
+codex.term.write('Codex CLI v0.136.0\r\n');
+codex.term.write('Model: gpt-5.1-codex\r\n');
+codex.term.write('Provider: openai via linoapi\r\n');
+codex.term.write('MCP: github-agent enabled\r\n');
+codex.term.write('\r\n');
+codex.term.write('  ◇ Ready\r\n');
+</script>
+</body>
+</html>

@@ -8,6 +8,7 @@ from .config import (
 )
 from .github_client import GitHubClient
 from .review import review_diff
+from .review_engine import ReviewService
 from .policy import PolicyConfig, resolve_dry_run
 from .audit import AuditLogger
 
@@ -90,24 +91,64 @@ def get_pr_diff(repo: str, pr_number: int) -> str:
 
 @mcp.tool()
 def review_pr_diff(repo: str, pr_number: int) -> str:
-    """Review a pull request diff and return code review feedback."""
+    """Review a PR diff using ruff + legacy regex rules. Returns structured findings."""
     client = GitHubClient(get_github_token(), get_github_api_base())
     result = client.get_pr_diff(repo, pr_number)
 
     if "error" in result:
         return f"Error: {result['error']}"
 
-    issues = review_diff(result['diff'])
+    # Use new review engine (ruff + regex fallback)
+    try:
+        review = ReviewService()
+        findings = review.review(result["diff"])
+    except Exception:
+        findings = []
 
-    if not issues:
+    if not findings:
         return f"PR #{pr_number} looks good - no issues found!"
 
-    output = [f"Code review for PR #{pr_number}:"]
-    for issue in issues:
-        severity_icon = "⚠️" if issue['severity'] == 'warning' else "❌"
-        output.append(f"{severity_icon} Line {issue['line']}: {issue['message']} ({issue['rule']})")
+    output = [f"Code review for PR #{pr_number} ({len(findings)} issues):"]
+    for f in findings:
+        icon = "❌" if f.severity == "error" else "⚠️"
+        output.append(
+            f"{icon} {f.file}:{f.line} — {f.message} "
+            f"[{f.rule}/{f.source}]"
+        )
 
     return "\n".join(output)
+
+
+@mcp.tool()
+def comment_pr_review(repo: str, pr_number: int) -> str:
+    """Fetch PR diff, run code review, and post findings as review comments."""
+    client = GitHubClient(get_github_token(), get_github_api_base())
+    diff_result = client.get_pr_diff(repo, pr_number)
+
+    if "error" in diff_result:
+        return f"Error: {diff_result['error']}"
+
+    try:
+        review = ReviewService()
+        findings = review.review(diff_result["diff"])
+    except Exception:
+        findings = []
+
+    if not findings:
+        return f"PR #{pr_number} looks good - no issues found!"
+
+    # Limit to top 10 findings to avoid spam
+    posted = 0
+    for f in findings[:10]:
+        body = f"{f.message}\n\nRule: `{f.rule}` | Source: {f.source}"
+        r = client.create_review_comment(repo, pr_number, body, path=f.file, line=f.line)
+        if "error" not in r:
+            posted += 1
+
+    return (
+        f"Posted {posted} review comments on PR #{pr_number} "
+        f"({len(findings)} total issues found, top 10 posted)"
+    )
 
 
 # ── Write tools (guarded) ──────────────────────────────
