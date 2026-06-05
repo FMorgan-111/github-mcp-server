@@ -41,10 +41,11 @@ class PolicyConfig:
                 raise RuntimeError(f"Failed to load policy file {path}: {e}")
             return self
 
-        self.repo_allowlist = data.get("repo_allowlist", [])
-        self.deny_pr_base = (
-            data.get("protected_branches", {}).get("deny_pr_base", [])
+        self.repo_allowlist = _ensure_list(data.get("repo_allowlist"))
+        deny_list = (
+            data.get("protected_branches", {}).get("deny_pr_base")
         )
+        self.deny_pr_base = _ensure_list(deny_list) if deny_list is not None else []
         self.deny_force_push = (
             data.get("protected_branches", {}).get("deny_force_push", True)
         )
@@ -88,6 +89,17 @@ class PolicyConfig:
 
 
 # ── Helpers ────────────────────────────────────────────
+def _ensure_list(v) -> list:
+    """Return v as a list, wrapping a single string if needed."""
+    if v is None:
+        return []
+    if isinstance(v, list):
+        return v
+    if isinstance(v, str):
+        return [v]
+    return [v]
+
+
 def _wildcard_match(pattern: str, value: str) -> bool:
     """Match a glob-like pattern (e.g. 'FMorgan-111/*') against a value."""
     if pattern == "*":
