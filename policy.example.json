@@ -1,0 +1,14 @@
+{
+  "repo_allowlist": [
+    "FMorgan-111/*",
+    "FMorgan-111/github-mcp-server"
+  ],
+  "protected_branches": {
+    "deny_pr_base": ["main", "master"],
+    "deny_force_push": true
+  },
+  "audit": {
+    "enabled": true,
+    "sink": "stdout"
+  }
+}

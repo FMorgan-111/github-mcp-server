@@ -1,16 +1,45 @@
-"""MCP tools for GitHub operations"""
+"""MCP tools for GitHub operations — with policy guard & audit logging."""
 from fastmcp import FastMCP
+
+from .config import (
+    get_github_token, get_github_api_base,
+    get_policy_path, get_policy_required,
+    get_audit_sink, get_dry_run_enabled,
+)
 from .github_client import GitHubClient
 from .review import review_diff
-from .config import get_github_token, get_github_api_base
+from .policy import PolicyConfig, resolve_dry_run
+from .audit import AuditLogger
 
 
-mcp = FastMCP("GitHub MCP Server")
+mcp = FastMCP("GitHub MCP Agent Server")
+
+# Lazy-init singletons — created on first access
+_policy: PolicyConfig | None = None
+_audit: AuditLogger | None = None
 
 
+def _get_policy() -> PolicyConfig:
+    global _policy
+    if _policy is None:
+        _policy = PolicyConfig().load(
+            path=get_policy_path(),
+            required=get_policy_required(),
+        )
+    return _policy
+
+
+def _get_audit() -> AuditLogger:
+    global _audit
+    if _audit is None:
+        _audit = AuditLogger(sink=get_audit_sink())
+    return _audit
+
+
+# ── Read tools (no guard needed) ───────────────────────
 @mcp.tool()
 def search_code(query: str, repo: str = None) -> str:
-    """Search for code in GitHub repositories"""
+    """Search for code in GitHub repositories."""
     client = GitHubClient(get_github_token(), get_github_api_base())
     result = client.search_code(query, repo)
 
@@ -22,7 +51,7 @@ def search_code(query: str, repo: str = None) -> str:
         return "No results found"
 
     output = []
-    for item in items[:10]:  # Limit to first 10 results
+    for item in items[:10]:
         output.append(f"• {item['path']} in {item['repo']}\n  {item['url']}")
 
     return f"Found {len(items)} results:\n" + "\n\n".join(output)
@@ -30,7 +59,7 @@ def search_code(query: str, repo: str = None) -> str:
 
 @mcp.tool()
 def list_issues(repo: str, state: str = "open") -> str:
-    """List issues in a GitHub repository"""
+    """List issues in a GitHub repository."""
     client = GitHubClient(get_github_token(), get_github_api_base())
     result = client.list_issues(repo, state)
 
@@ -41,27 +70,15 @@ def list_issues(repo: str, state: str = "open") -> str:
         return f"No {state} issues found in {repo}"
 
     output = []
-    for issue in result[:10]:  # Limit to first 10
+    for issue in result[:10]:
         output.append(f"#{issue['number']}: {issue['title']}\n  {issue['html_url']}")
 
     return f"Issues in {repo} ({state}):\n" + "\n\n".join(output)
 
 
 @mcp.tool()
-def create_issue(repo: str, title: str, body: str) -> str:
-    """Create a new issue in a GitHub repository"""
-    client = GitHubClient(get_github_token(), get_github_api_base())
-    result = client.create_issue(repo, title, body)
-
-    if "error" in result:
-        return f"Error: {result['error']}"
-
-    return f"Issue created: #{result['number']}: {result['title']}\n{result['html_url']}"
-
-
-@mcp.tool()
 def get_pr_diff(repo: str, pr_number: int) -> str:
-    """Get the diff for a pull request"""
+    """Get the diff for a pull request."""
     client = GitHubClient(get_github_token(), get_github_api_base())
     result = client.get_pr_diff(repo, pr_number)
 
@@ -72,20 +89,8 @@ def get_pr_diff(repo: str, pr_number: int) -> str:
 
 
 @mcp.tool()
-def create_pr(repo: str, title: str, body: str, head: str, base: str) -> str:
-    """Create a new pull request"""
-    client = GitHubClient(get_github_token(), get_github_api_base())
-    result = client.create_pr(repo, title, body, head, base)
-
-    if "error" in result:
-        return f"Error: {result['error']}"
-
-    return f"PR created: #{result['number']}: {result['title']}\n{result['html_url']}"
-
-
-@mcp.tool()
 def review_pr_diff(repo: str, pr_number: int) -> str:
-    """Review a pull request diff and return code review feedback"""
+    """Review a pull request diff and return code review feedback."""
     client = GitHubClient(get_github_token(), get_github_api_base())
     result = client.get_pr_diff(repo, pr_number)
 
@@ -103,3 +108,143 @@ def review_pr_diff(repo: str, pr_number: int) -> str:
         output.append(f"{severity_icon} Line {issue['line']}: {issue['message']} ({issue['rule']})")
 
     return "\n".join(output)
+
+
+# ── Write tools (guarded) ──────────────────────────────
+@mcp.tool()
+def create_issue(repo: str, title: str, body: str, dry_run: bool = False) -> str:
+    """Create a new issue in a GitHub repository.
+
+    Args:
+        repo: Repository in 'owner/repo' format.
+        title: Issue title.
+        body: Issue body text.
+        dry_run: If True, preview the operation without executing.
+    """
+    dry = resolve_dry_run(dry_run, get_dry_run_enabled())
+    policy = _get_policy()
+    audit = _get_audit()
+
+    # Guard: repo allowlist check
+    repo_decision = policy.check_repo(repo)
+    if repo_decision.action == "deny":
+        audit.log(
+            tool="create_issue", action="issue.create", repo=repo,
+            dry_run=dry, policy_decision="deny",
+            policy_rule=repo_decision.matched_rule,
+            request_body={"title": title, "body": body},
+            error=repo_decision.reason,
+        )
+        return f"❌ Policy Denied: {repo_decision.reason}"
+
+    if dry:
+        audit.log(
+            tool="create_issue", action="issue.create", repo=repo,
+            dry_run=True, policy_decision="allow",
+            policy_rule=repo_decision.matched_rule,
+            request_body={"title": title, "body": body},
+        )
+        return (
+            f"[DRY RUN] Would create issue in {repo}:\n"
+            f"  Title: {title}\n"
+            f"  Body:  {body[:120]}{'...' if len(body) > 120 else ''}\n"
+            f"  Policy: {repo_decision.reason}"
+        )
+
+    client = GitHubClient(get_github_token(), get_github_api_base())
+    result = client.create_issue(repo, title, body)
+
+    if "error" in result:
+        audit.log(
+            tool="create_issue", action="issue.create", repo=repo,
+            policy_decision="allow", policy_rule=repo_decision.matched_rule,
+            request_body={"title": title, "body": body},
+            error=result["error"],
+        )
+        return f"Error: {result['error']}"
+
+    audit.log(
+        tool="create_issue", action="issue.create", repo=repo,
+        policy_decision="allow", policy_rule=repo_decision.matched_rule,
+        request_body={"title": title, "body": body},
+        response=result,
+    )
+    return f"Issue created: #{result['number']}: {result['title']}\n{result['html_url']}"
+
+
+@mcp.tool()
+def create_pr(repo: str, title: str, body: str, head: str, base: str,
+              dry_run: bool = False) -> str:
+    """Create a new pull request.
+
+    Args:
+        repo: Repository in 'owner/repo' format.
+        title: PR title.
+        body: PR description.
+        head: Source branch name.
+        base: Target branch name (e.g. 'main').
+        dry_run: If True, preview the operation without executing.
+    """
+    dry = resolve_dry_run(dry_run, get_dry_run_enabled())
+    policy = _get_policy()
+    audit = _get_audit()
+
+    # Guard: repo allowlist
+    repo_decision = policy.check_repo(repo)
+    if repo_decision.action == "deny":
+        audit.log(
+            tool="create_pr", action="pull_request.create", repo=repo,
+            dry_run=dry, policy_decision="deny",
+            policy_rule=repo_decision.matched_rule,
+            request_body={"title": title, "head": head, "base": base},
+            error=repo_decision.reason,
+        )
+        return f"❌ Policy Denied: {repo_decision.reason}"
+
+    # Guard: branch protection
+    branch_decision = policy.check_branch_for_pr(base)
+    if branch_decision.action == "deny":
+        audit.log(
+            tool="create_pr", action="pull_request.create", repo=repo,
+            dry_run=dry, policy_decision="deny",
+            policy_rule=branch_decision.matched_rule,
+            request_body={"title": title, "head": head, "base": base},
+            error=branch_decision.reason,
+        )
+        return f"❌ Policy Denied: {branch_decision.reason}"
+
+    if dry:
+        audit.log(
+            tool="create_pr", action="pull_request.create", repo=repo,
+            dry_run=True, policy_decision="allow",
+            policy_rule=f"{repo_decision.matched_rule}, {branch_decision.matched_rule}",
+            request_body={"title": title, "head": head, "base": base},
+        )
+        return (
+            f"[DRY RUN] Would create PR in {repo}:\n"
+            f"  Title:  {title}\n"
+            f"  Head:   {head} → Base: {base}\n"
+            f"  Policy: {repo_decision.reason} · {branch_decision.reason}"
+        )
+
+    client = GitHubClient(get_github_token(), get_github_api_base())
+    result = client.create_pr(repo, title, body, head, base)
+
+    if "error" in result:
+        audit.log(
+            tool="create_pr", action="pull_request.create", repo=repo,
+            policy_decision="allow",
+            policy_rule=f"{repo_decision.matched_rule}, {branch_decision.matched_rule}",
+            request_body={"title": title, "head": head, "base": base},
+            error=result["error"],
+        )
+        return f"Error: {result['error']}"
+
+    audit.log(
+        tool="create_pr", action="pull_request.create", repo=repo,
+        policy_decision="allow",
+        policy_rule=f"{repo_decision.matched_rule}, {branch_decision.matched_rule}",
+        request_body={"title": title, "head": head, "base": base},
+        response=result,
+    )
+    return f"PR created: #{result['number']}: {result['title']}\n{result['html_url']}"

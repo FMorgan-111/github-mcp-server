@@ -1,0 +1,86 @@
+"""Tests for policy.py — allowlist & branch protection."""
+import json
+import os
+import tempfile
+import unittest
+
+from src.policy import PolicyConfig, resolve_dry_run
+
+
+class TestPolicyConfig(unittest.TestCase):
+
+    def _write_policy(self, data: dict) -> str:
+        """Write a temporary policy.json and return its path."""
+        f = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        )
+        json.dump(data, f)
+        f.close()
+        return f.name
+
+    def test_empty_config_default_allow(self):
+        cfg = PolicyConfig()
+        # not loaded → allows everything
+        self.assertEqual(cfg.check_repo("anything/here").action, "allow")
+        self.assertEqual(cfg.check_branch_for_pr("main").action, "allow")
+
+    def test_load_missing_file_not_required(self):
+        cfg = PolicyConfig().load("/nonexistent/path.json", required=False)
+        # no crash, default allow
+        self.assertEqual(cfg.check_repo("x/y").action, "allow")
+
+    def test_load_missing_file_required_raises(self):
+        with self.assertRaises(FileNotFoundError):
+            PolicyConfig().load("/nonexistent/path.json", required=True)
+
+    def test_repo_allowlist_exact_match(self):
+        path = self._write_policy({"repo_allowlist": ["FMorgan-111/test"]})
+        try:
+            cfg = PolicyConfig().load(path)
+            self.assertEqual(cfg.check_repo("FMorgan-111/test").action, "allow")
+            self.assertEqual(cfg.check_repo("other/repo").action, "deny")
+        finally:
+            os.unlink(path)
+
+    def test_repo_allowlist_wildcard(self):
+        path = self._write_policy({"repo_allowlist": ["FMorgan-111/*"]})
+        try:
+            cfg = PolicyConfig().load(path)
+            self.assertEqual(cfg.check_repo("FMorgan-111/foo").action, "allow")
+            self.assertEqual(cfg.check_repo("FMorgan-111/bar").action, "allow")
+            self.assertEqual(cfg.check_repo("other/repo").action, "deny")
+        finally:
+            os.unlink(path)
+
+    def test_allowlist_empty_means_allow_all(self):
+        path = self._write_policy({"repo_allowlist": []})
+        try:
+            cfg = PolicyConfig().load(path)
+            self.assertEqual(cfg.check_repo("anything/goes").action, "allow")
+        finally:
+            os.unlink(path)
+
+    def test_branch_protection_deny_main_master(self):
+        path = self._write_policy({
+            "repo_allowlist": [],
+            "protected_branches": {"deny_pr_base": ["main", "master"]},
+        })
+        try:
+            cfg = PolicyConfig().load(path)
+            self.assertEqual(cfg.check_branch_for_pr("main").action, "deny")
+            self.assertEqual(cfg.check_branch_for_pr("master").action, "deny")
+            self.assertEqual(cfg.check_branch_for_pr("develop").action, "allow")
+        finally:
+            os.unlink(path)
+
+    def test_resolve_dry_run(self):
+        # explicit arg wins
+        self.assertTrue(resolve_dry_run(True, False))
+        self.assertFalse(resolve_dry_run(False, True))
+        # None falls back to env
+        self.assertTrue(resolve_dry_run(None, True))
+        self.assertFalse(resolve_dry_run(None, False))
+
+
+if __name__ == "__main__":
+    unittest.main()

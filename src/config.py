@@ -18,3 +18,19 @@ def get_github_token() -> str:
 
 def get_github_api_base() -> str:
     return os.environ.get("GITHUB_API_BASE", "https://api.github.com")
+
+
+def get_policy_path() -> str:
+    return os.environ.get("GITHUB_POLICY_PATH", "policy.json")
+
+
+def get_policy_required() -> bool:
+    return os.environ.get("GITHUB_POLICY_REQUIRED", "").lower() in ("true", "1", "yes")
+
+
+def get_audit_sink() -> str:
+    return os.environ.get("GITHUB_AUDIT_LOG", "stdout")
+
+
+def get_dry_run_enabled() -> bool:
+    return os.environ.get("GITHUB_DRY_RUN", "").lower() in ("true", "1", "yes")
