@@ -7,6 +7,7 @@ from .config import (
     get_github_token, get_github_api_base,
     get_policy_path, get_policy_required,
     get_audit_sink, get_dry_run_enabled,
+    get_policy_no_watch,
 )
 from .github_client import GitHubClient
 from .review import review_diff
@@ -29,7 +30,16 @@ def _get_policy() -> PolicyConfig:
             path=get_policy_path(),
             required=get_policy_required(),
         )
+        if not get_policy_no_watch():
+            _policy.start_watching(get_policy_path())
     return _policy
+
+
+def _stop_policy_watcher() -> None:
+    """Shutdown hook: stop the policy file watcher if active."""
+    global _policy
+    if _policy is not None:
+        _policy.stop_watching()
 
 
 def _get_audit() -> AuditLogger:

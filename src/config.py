@@ -34,3 +34,7 @@ def get_audit_sink() -> str:
 
 def get_dry_run_enabled() -> bool:
     return os.environ.get("GITHUB_DRY_RUN", "").lower() in ("true", "1", "yes")
+
+
+def get_policy_no_watch() -> bool:
+    return os.environ.get("GITHUB_POLICY_NO_WATCH", "").lower() in ("true", "1", "yes")
