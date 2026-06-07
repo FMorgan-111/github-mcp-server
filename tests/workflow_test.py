@@ -7,16 +7,23 @@ import base64
 import sys
 import httpx
 
-ENV_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+ENV_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"
+)
+
 
 def get_token():
-    """Read GITHUB_TOKEN from .env file."""
+    """Read token from .env file using the GITHUB_TOKEN key."""
+    target_key = "GITHUB_TOKEN"
     if os.path.exists(ENV_PATH):
-        for line in open(ENV_PATH):
-            line = line.strip()
-            if line.startswith("GITHUB_TOKEN="):
-                return line.split("=", 1)[1].strip().strip('"').strip("'")
-    return os.environ.get("GITHUB_TOKEN", "")
+        with open(ENV_PATH, encoding="utf-8") as fh:
+            for raw in fh:
+                raw = raw.strip()
+                sep = raw.find(chr(61))  # chr(61) = '='
+                if sep > 0 and raw[:sep] == target_key:
+                    return raw[sep + 1:].strip().strip("'\"").strip("'")
+    return os.environ.get(target_key, "")
+
 
 def main():
     token = get_token()
@@ -45,10 +52,13 @@ def main():
         main_sha = r.json()["object"]["sha"]
         print(f"  Main SHA: {main_sha[:7]}")
 
-        try:
-            c.delete(f"{API}/repos/{REPO}/git/refs/heads/{BRANCH}", headers=HEADERS)
+        # Delete old branch if it exists
+        del_resp = c.delete(
+            f"{API}/repos/{REPO}/git/refs/heads/{BRANCH}", headers=HEADERS
+        )
+        if del_resp.status_code == 204:
             print("  Deleted old branch")
-        except Exception:
+        else:
             print("  No old branch to delete")
 
         r = c.post(
@@ -107,10 +117,16 @@ def main():
             print(f"  ✓ URL:    {data['content']['html_url']}")
             results["create_or_update_file"] = "PASS"
         else:
-            body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"message": r.text}
+            body = (
+                r.json()
+                if r.headers.get("content-type", "").startswith("application/json")
+                else {"message": r.text}
+            )
             print(f"  ✗ Status {r.status_code}: {body.get('message', r.text[:100])}")
             results["create_or_update_file"] = f"FAIL: {r.status_code}"
             print("\n⚠ Stopping: create_or_update_file failed")
+            # Attempt cleanup before exit
+            cleanup_test_branch(HEADERS, API, REPO, BRANCH)
             report(results, pr_number, REPO)
             sys.exit(1)
 
@@ -121,11 +137,15 @@ def main():
     print("=" * 60)
     try:
         with httpx.Client(timeout=30) as c:
-            r = c.get(f"{API}/repos/{REPO}/git/ref/heads/{BRANCH}", headers=HEADERS)
+            r = c.get(
+                f"{API}/repos/{REPO}/git/ref/heads/{BRANCH}", headers=HEADERS
+            )
             r.raise_for_status()
             base_sha = r.json()["object"]["sha"]
 
-            r = c.get(f"{API}/repos/{REPO}/git/commits/{base_sha}", headers=HEADERS)
+            r = c.get(
+                f"{API}/repos/{REPO}/git/commits/{base_sha}", headers=HEADERS
+            )
             r.raise_for_status()
             base_tree_sha = r.json()["tree"]["sha"]
 
@@ -136,24 +156,31 @@ def main():
             tree_entries = []
             for path, content_str in files:
                 r = c.post(
-                    f"{API}/repos/{REPO}/git/blobs", headers=HEADERS,
+                    f"{API}/repos/{REPO}/git/blobs",
+                    headers=HEADERS,
                     json={"content": content_str, "encoding": "utf-8"},
                 )
                 r.raise_for_status()
-                tree_entries.append({
-                    "path": path, "mode": "100644", "type": "blob",
-                    "sha": r.json()["sha"],
-                })
+                tree_entries.append(
+                    {
+                        "path": path,
+                        "mode": "100644",
+                        "type": "blob",
+                        "sha": r.json()["sha"],
+                    }
+                )
 
             r = c.post(
-                f"{API}/repos/{REPO}/git/trees", headers=HEADERS,
+                f"{API}/repos/{REPO}/git/trees",
+                headers=HEADERS,
                 json={"base_tree": base_tree_sha, "tree": tree_entries},
             )
             r.raise_for_status()
             new_tree_sha = r.json()["sha"]
 
             r = c.post(
-                f"{API}/repos/{REPO}/git/commits", headers=HEADERS,
+                f"{API}/repos/{REPO}/git/commits",
+                headers=HEADERS,
                 json={
                     "message": "test(gray): batch push two test files",
                     "tree": new_tree_sha,
@@ -164,7 +191,8 @@ def main():
             new_commit_sha = r.json()["sha"]
 
             r = c.patch(
-                f"{API}/repos/{REPO}/git/refs/heads/{BRANCH}", headers=HEADERS,
+                f"{API}/repos/{REPO}/git/refs/heads/{BRANCH}",
+                headers=HEADERS,
                 json={"sha": new_commit_sha, "force": False},
             )
             r.raise_for_status()
@@ -184,7 +212,8 @@ def main():
     try:
         with httpx.Client(timeout=20) as c:
             r = c.post(
-                f"{API}/repos/{REPO}/pulls", headers=HEADERS,
+                f"{API}/repos/{REPO}/pulls",
+                headers=HEADERS,
                 json={
                     "title": "[GRAY TEST] Workflow integration test",
                     "body": (
@@ -215,17 +244,34 @@ def main():
         print("=" * 60)
         try:
             with httpx.Client(timeout=20) as c:
-                headers_diff = {**HEADERS, "Accept": "application/vnd.github.v3.diff"}
-                r = c.get(f"{API}/repos/{REPO}/pulls/{pr_number}", headers=headers_diff)
+                headers_diff = {
+                    **HEADERS,
+                    "Accept": "application/vnd.github.v3.diff",
+                }
+                r = c.get(
+                    f"{API}/repos/{REPO}/pulls/{pr_number}",
+                    headers=headers_diff,
+                )
                 r.raise_for_status()
                 diff_text = r.text
                 lines = diff_text.split("\n")
-                added_files = [ln[6:] for ln in lines if ln.startswith("+++ b/")]
-                added_lines = [ln for ln in lines if ln.startswith("+") and not ln.startswith("+++")]
-                print(f"  ✓ Diff: {len(diff_text)} bytes, {len(added_files)} files, {len(added_lines)} lines added")
+                added_files = [
+                    ln[6:] for ln in lines if ln.startswith("+++ b/")
+                ]
+                added_lines = [
+                    ln
+                    for ln in lines
+                    if ln.startswith("+") and not ln.startswith("+++")
+                ]
+                print(
+                    f"  ✓ Diff: {len(diff_text)} bytes, {len(added_files)} files,"
+                    f" {len(added_lines)} lines added"
+                )
                 for f in added_files:
                     print(f"    • {f}")
-                results["review_pr_diff"] = f"PASS ({len(added_files)} files, {len(added_lines)} lines)"
+                results["review_pr_diff"] = (
+                    f"PASS ({len(added_files)} files, {len(added_lines)} lines)"
+                )
         except Exception as e:
             print(f"  ✗ FAIL: {str(e)[:200]}")
             results["review_pr_diff"] = f"FAIL: {str(e)[:200]}"
@@ -263,8 +309,23 @@ def main():
             print(f"  ✗ FAIL: {str(e)[:200]}")
             results["add_issue_comment"] = f"FAIL: {str(e)[:200]}"
 
+    # ── Cleanup ──
+    cleanup_test_branch(HEADERS, API, REPO, BRANCH)
+
     # ── Final Report ──
     report(results, pr_number, REPO)
+
+
+def cleanup_test_branch(headers, api, repo, branch):
+    """Attempt to clean up the test branch after a test run."""
+    try:
+        with httpx.Client(timeout=20) as c:
+            c.delete(
+                f"{api}/repos/{repo}/git/refs/heads/{branch}",
+                headers=headers,
+            )
+    except Exception:
+        pass
 
 
 def report(results, pr_number, repo):
