@@ -3,15 +3,38 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "github-mcp-server"
+name = "mcp-github-agent"
 version = "0.1.0"
-description = "GitHub MCP Agent Server — let AI agents operate GitHub through Model Context Protocol"
+description = "MCP server giving AI agents controlled GitHub access with policy guard and audit trail"
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.10"
+authors = [
+    { name = "Morgan Fu", email = "maogenfu0121@163.com" },
+]
+keywords = ["mcp", "github", "ai-agent", "claude-code", "codex", "policy", "audit"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Version Control :: Git",
+]
 dependencies = [
     "fastmcp",
     "httpx",
     "python-dotenv",
 ]
+
+[project.urls]
+Homepage = "https://github.com/FMorgan-111/github-mcp-server"
+Repository = "https://github.com/FMorgan-111/github-mcp-server"
+Issues = "https://github.com/FMorgan-111/github-mcp-server/issues"
 
 [project.scripts]
 github-mcp = "src.main:main"
