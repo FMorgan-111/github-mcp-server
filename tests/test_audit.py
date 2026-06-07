@@ -2,8 +2,10 @@
 import io
 import json
 import os
+from datetime import datetime
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 
 from src.audit import AuditLogger
 
@@ -115,6 +117,64 @@ class TestAuditLogger(unittest.TestCase):
             logger.close()
             if os.path.exists(path):
                 os.unlink(path)
+
+    def test_log_format_redacts_nested_values_and_truncates_long_strings(self):
+        stream = io.StringIO()
+        with patch("src.audit.sys.stdout", stream):
+            logger = AuditLogger(sink="stdout")
+            logger.log(
+                tool="create_issue",
+                action="issue.create",
+                repo="owner/repo",
+                request_body={
+                    "nested": {"api_key": "secret"},
+                    "items": [{"auth": "bearer"}],
+                    "body": "x" * 250,
+                },
+            )
+
+        entry = json.loads(stream.getvalue())
+        datetime.fromisoformat(entry["timestamp"])
+        self.assertEqual(len(entry["request_id"]), 12)
+        self.assertEqual(entry["request"]["nested"]["api_key"], "***REDACTED***")
+        self.assertEqual(entry["request"]["items"][0]["auth"], "***REDACTED***")
+        self.assertEqual(entry["request"]["body"], "x" * 200 + "...")
+
+    def test_multiple_operations_write_json_lines(self):
+        path = tempfile.mktemp(suffix=".jsonl")
+        try:
+            logger = AuditLogger(sink=path)
+            logger.log("tool1", "action1", "owner/repo")
+            logger.log("tool2", "action2", "owner/repo", error="failed")
+            logger.close()
+
+            with open(path, "r", encoding="utf-8") as f:
+                entries = [json.loads(line) for line in f]
+
+            self.assertEqual([e["tool"] for e in entries], ["tool1", "tool2"])
+            self.assertEqual(entries[1]["error"], "failed")
+        finally:
+            logger.close()
+            if os.path.exists(path):
+                os.unlink(path)
+
+    def test_invalid_relative_sink_and_allowlist_rejection(self):
+        with self.assertRaises(ValueError):
+            AuditLogger(sink="relative.jsonl")
+
+        with patch.dict(os.environ, {"GITHUB_AUDIT_DIR_ALLOWLIST": "/allowed"}, clear=False):
+            with self.assertRaises(ValueError):
+                AuditLogger(sink="/tmp/audit.jsonl")
+
+    def test_logging_errors_are_suppressed(self):
+        logger = AuditLogger(sink="stdout")
+        broken = Mock()
+        broken.write.side_effect = RuntimeError("disk full")
+
+        with patch.object(logger, "_get_stream", return_value=broken):
+            logger.log("tool", "action", "owner/repo")
+
+        broken.write.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -39,6 +39,11 @@ class PolicyConfig:
         except (json.JSONDecodeError, OSError) as e:
             if required:
                 raise RuntimeError(f"Failed to load policy file {path}: {e}")
+            # Invalid JSON → default-deny (safer than default-allow)
+            self._loaded = True
+            self._deny_all = True
+            self.repo_allowlist = []
+            self.deny_pr_base = []
             return self
 
         self.repo_allowlist = _ensure_list(data.get("repo_allowlist"))
@@ -56,6 +61,9 @@ class PolicyConfig:
         """Check if `repo` is allowed."""
         if not self._loaded:
             return PolicyDecision("allow", "policy not loaded", "default-allow")
+
+        if getattr(self, "_deny_all", False):
+            return PolicyDecision("deny", "policy load failed — denying all", "policy:invalid-config")
 
         for pattern in self.repo_allowlist:
             if _wildcard_match(pattern, repo):

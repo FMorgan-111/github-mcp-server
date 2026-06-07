@@ -43,3 +43,32 @@ def test_parse_diff_no_added_lines():
     files = parse_diff(diff)
     assert len(files) == 1
     assert len(files[0].added_lines) == 1  # "new" is an addition
+
+
+def test_parse_diff_tracks_removed_lines_without_returning_delete_only_file():
+    diff = """diff --git a/x.py b/x.py
+--- a/x.py
++++ b/x.py
+@@ -10,2 +10,1 @@
+ context
+-old
+"""
+    files = parse_diff(diff)
+    assert files == []
+
+
+def test_parse_diff_line_numbers_advance_over_context_and_removals():
+    diff = """diff --git a/src/app.py b/src/app.py
+--- a/src/app.py
++++ b/src/app.py
+@@ -20,4 +20,5 @@
+ line 20
+-old line
++new line
+ line 22
++another new line
+"""
+    files = parse_diff(diff)
+    assert len(files) == 1
+    assert files[0].added_lines == {21, 23}
+    assert files[0].removed_lines == {21}

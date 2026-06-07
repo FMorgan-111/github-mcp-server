@@ -91,8 +91,9 @@ class AuditLogger:
             stream = self._get_stream()
             stream.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
             stream.flush()
-        except Exception:
-            pass  # audit must never crash the tool
+        except Exception as e:
+            # Audit must never crash the tool, but log the failure somewhere
+            print(f"[audit] write failed: {e}", file=sys.stderr)
 
     def close(self) -> None:
         if self._fobj:

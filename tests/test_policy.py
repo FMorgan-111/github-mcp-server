@@ -52,6 +52,53 @@ class TestPolicyConfig(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_wildcard_match_is_anchored(self):
+        path = self._write_policy({"repo_allowlist": ["org/*-service"]})
+        try:
+            cfg = PolicyConfig().load(path)
+            self.assertEqual(cfg.check_repo("org/api-service").action, "allow")
+            self.assertEqual(cfg.check_repo("prefix/org/api-service").action, "deny")
+            self.assertEqual(cfg.check_repo("org/api-service-extra").action, "deny")
+        finally:
+            os.unlink(path)
+
+    def test_single_string_policy_values_are_wrapped(self):
+        path = self._write_policy({
+            "repo_allowlist": "owner/repo",
+            "protected_branches": {"deny_pr_base": "release/*"},
+        })
+        try:
+            cfg = PolicyConfig().load(path)
+            self.assertEqual(cfg.repo_allowlist, ["owner/repo"])
+            self.assertEqual(cfg.deny_pr_base, ["release/*"])
+            self.assertEqual(cfg.check_branch_for_pr("release/1.0").action, "deny")
+        finally:
+            os.unlink(path)
+
+    def test_invalid_policy_required_raises_and_optional_keeps_defaults(self):
+        f = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        f.write("{invalid")
+        f.close()
+        try:
+            with self.assertRaises(RuntimeError):
+                PolicyConfig().load(f.name, required=True)
+            cfg = PolicyConfig().load(f.name, required=False)
+            self.assertEqual(cfg.check_repo("owner/repo").action, "deny")
+        finally:
+            os.unlink(f.name)
+
+    def test_non_list_values_are_wrapped(self):
+        path = self._write_policy({
+            "repo_allowlist": 123,
+            "protected_branches": {"deny_force_push": False},
+        })
+        try:
+            cfg = PolicyConfig().load(path)
+            self.assertEqual(cfg.repo_allowlist, [123])
+            self.assertFalse(cfg.deny_force_push)
+        finally:
+            os.unlink(path)
+
     def test_allowlist_empty_means_allow_all(self):
         path = self._write_policy({"repo_allowlist": []})
         try:
