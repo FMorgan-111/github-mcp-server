@@ -1,5 +1,4 @@
 """Tests for github_client.py."""
-from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from src.github_client import GitHubClient
@@ -11,6 +10,8 @@ class FakeHttpxClient:
         self.error = error
         self.get_calls = []
         self.post_calls = []
+        self.put_calls = []
+        self.patch_calls = []
 
     def __enter__(self):
         if self.error:
@@ -26,6 +27,14 @@ class FakeHttpxClient:
 
     def post(self, *args, **kwargs):
         self.post_calls.append((args, kwargs))
+        return self.response
+
+    def put(self, *args, **kwargs):
+        self.put_calls.append((args, kwargs))
+        return self.response
+
+    def patch(self, *args, **kwargs):
+        self.patch_calls.append((args, kwargs))
         return self.response
 
 
@@ -171,3 +180,127 @@ def test_create_review_comment_payload_variants_and_error():
     with patch("src.github_client.httpx.Client", return_value=FakeHttpxClient(response=response2)):
         error = GitHubClient("token").create_review_comment("owner/repo", 5, "body")
     assert error == {"error": "Review comment failed: validation"}
+
+
+# ── File operations ────────────────────────────────────
+
+def test_get_file_contents_decodes_base64():
+    import base64
+    encoded = base64.b64encode(b"hello world").decode()
+    response = Mock()
+    response.json.return_value = {
+        "path": "README.md", "sha": "abc123", "size": 11,
+        "content": encoded, "encoding": "base64",
+    }
+    fake = FakeHttpxClient(response=response)
+
+    with patch("src.github_client.httpx.Client", return_value=fake):
+        result = GitHubClient("token").get_file_contents("owner/repo", "README.md", ref="main")
+
+    assert result["content"] == "hello world"
+    assert result["path"] == "README.md"
+    assert result["sha"] == "abc123"
+    assert fake.get_calls[0][1]["params"] == {"ref": "main"}
+
+
+def test_get_file_contents_rejects_directory():
+    response = Mock()
+    response.json.return_value = [{"name": "file1.py"}, {"name": "file2.py"}]
+    fake = FakeHttpxClient(response=response)
+
+    with patch("src.github_client.httpx.Client", return_value=fake):
+        result = GitHubClient("token").get_file_contents("owner/repo", "src")
+
+    assert "error" in result
+    assert "directory" in result["error"]
+
+
+def test_get_file_contents_handles_errors():
+    with patch("src.github_client.httpx.Client", return_value=FakeHttpxClient(error=RuntimeError("404"))):
+        result = GitHubClient("token").get_file_contents("owner/repo", "missing.py")
+    assert result == {"error": "Get file contents failed: 404"}
+
+
+def test_create_or_update_file_base64_encodes():
+    response = Mock()
+    response.json.return_value = {
+        "commit": {"sha": "commit123"},
+        "content": {"sha": "blob456", "path": "src/new.py",
+                     "html_url": "https://example/new.py"},
+    }
+    fake = FakeHttpxClient(response=response)
+
+    with patch("src.github_client.httpx.Client", return_value=fake):
+        result = GitHubClient("token").create_or_update_file(
+            "owner/repo", "src/new.py", "Add new.py", "print(1)",
+            branch="feature",
+        )
+
+    assert result["commit_sha"] == "commit123"
+    assert result["content_sha"] == "blob456"
+    # Verify base64 encoding was done
+    import base64
+    payload = fake.put_calls[0][1]["json"]
+    assert payload["branch"] == "feature"
+    assert base64.b64decode(payload["content"]).decode() == "print(1)"
+
+
+def test_create_or_update_file_with_sha():
+    response = Mock()
+    response.json.return_value = {
+        "commit": {"sha": "commit789"},
+        "content": {"sha": "blob012", "path": "src/app.py",
+                     "html_url": "https://example/app.py"},
+    }
+    fake = FakeHttpxClient(response=response)
+
+    with patch("src.github_client.httpx.Client", return_value=fake):
+        result = GitHubClient("token").create_or_update_file(
+            "owner/repo", "src/app.py", "Update app.py", "new content",
+            sha="oldsha123",
+        )
+
+    assert result["commit_sha"] == "commit789"
+    assert fake.put_calls[0][1]["json"]["sha"] == "oldsha123"
+
+
+def test_create_or_update_file_handles_errors():
+    with patch("src.github_client.httpx.Client", return_value=FakeHttpxClient(error=RuntimeError("409 conflict"))):
+        result = GitHubClient("token").create_or_update_file("owner/repo", "x.py", "msg", "c")
+    assert result == {"error": "Create/update file failed: 409 conflict"}
+
+
+def test_add_issue_comment_posts_and_handles_errors():
+    response = Mock()
+    response.json.return_value = {"id": 42, "html_url": "https://example/comment/42"}
+    fake = FakeHttpxClient(response=response)
+
+    with patch("src.github_client.httpx.Client", return_value=fake):
+        result = GitHubClient("token").add_issue_comment("owner/repo", 1, "Nice!")
+
+    assert result == {"id": 42, "html_url": "https://example/comment/42"}
+    assert fake.post_calls[0][1]["json"] == {"body": "Nice!"}
+
+    with patch("src.github_client.httpx.Client", return_value=FakeHttpxClient(error=RuntimeError("locked"))):
+        error = GitHubClient("token").add_issue_comment("owner/repo", 1, "body")
+    assert error == {"error": "Add issue comment failed: locked"}
+
+
+def test_merge_pull_request_puts_and_handles_errors():
+    response = Mock()
+    response.json.return_value = {"merged": True, "sha": "abc123", "message": "Merged"}
+    fake = FakeHttpxClient(response=response)
+
+    with patch("src.github_client.httpx.Client", return_value=fake):
+        result = GitHubClient("token").merge_pull_request(
+            "owner/repo", 7, commit_title="Custom", merge_method="squash",
+        )
+
+    assert result == {"merged": True, "sha": "abc123", "message": "Merged"}
+    payload = fake.put_calls[0][1]["json"]
+    assert payload["merge_method"] == "squash"
+    assert payload["commit_title"] == "Custom"
+
+    with patch("src.github_client.httpx.Client", return_value=FakeHttpxClient(error=RuntimeError("405"))):
+        error = GitHubClient("token").merge_pull_request("owner/repo", 7)
+    assert error == {"error": "Merge PR failed: 405"}

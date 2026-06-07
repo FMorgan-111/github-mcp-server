@@ -43,6 +43,11 @@
 | `create_pr`       | Create a pull request between branches       | `create_pr("owner/repo", "Add feature", "Details...", head="feat", base="main")` | Confirmation with PR URL                   |
 | `review_pr_diff`  | Run local automated code review rules        | `review_pr_diff("owner/repo", pr_number=7)`                                   | List of warnings and errors found           |
 | `comment_pr_review`| Post review findings as PR comments         | `comment_pr_review("owner/repo", pr_number=7)`                                | Number of comments posted                   |
+| `get_file_contents`| Read a file from a repository               | `get_file_contents("owner/repo", "src/main.py", ref="main")`                   | Decoded file content with metadata          |
+| `create_or_update_file`| Create or update a single file (guarded) | `create_or_update_file("owner/repo", "src/app.py", content="print(1)", message="Add app.py")` | Commit SHA and URL                         |
+| `push_files`      | Push multiple files as a single commit       | `push_files("owner/repo", "main", "feat: add modules", '[{"path":"a.py","content":"..."}]')` | Commit SHA and file list                   |
+| `add_issue_comment`| Comment on an issue or pull request          | `add_issue_comment("owner/repo", 1, "Looks good!")`                           | Comment URL                                |
+| `merge_pull_request`| Merge a pull request                        | `merge_pull_request("owner/repo", 42, merge_method="squash")`                  | Merge status and SHA                       |
 
 ---
 
@@ -107,7 +112,7 @@ python3 -m pytest tests/ -v
 python3 -m src.main
 ```
 
-72 tests, all passing.
+106 tests, all passing.
 
 ---
 

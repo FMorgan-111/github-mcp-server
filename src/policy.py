@@ -65,6 +65,7 @@ class PolicyConfig:
                 data.get("protected_branches", {}).get("deny_force_push", True)
             )
             self._loaded = True
+            self._deny_all = False
             return self
 
     # ── File watching (hot-reload) ──────────────────

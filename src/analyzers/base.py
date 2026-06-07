@@ -1,5 +1,5 @@
 """Analyzer protocol — pluggable code analysis backends."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Protocol
 
 

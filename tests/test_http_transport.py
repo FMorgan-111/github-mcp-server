@@ -1,5 +1,4 @@
 """Tests for HTTP transport mode."""
-import json
 import socket
 import subprocess
 import sys

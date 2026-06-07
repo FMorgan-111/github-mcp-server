@@ -11,6 +11,11 @@ from src.tools import (
     comment_pr_review,
     create_issue,
     create_pr,
+    get_file_contents,
+    create_or_update_file,
+    push_files,
+    add_issue_comment,
+    merge_pull_request,
 )
 from src.review import review_diff
 
@@ -80,7 +85,7 @@ index 1234567..abcdefg 100644
 
     def test_search_empty_results(self):
         """Test search_code returns proper message for no results"""
-        from unittest.mock import patch, Mock
+        from unittest.mock import patch
         with patch('src.tools.GitHubClient') as mock_cls:
             mock_cls.return_value.search_code.return_value = {"items": []}
             result = search_code("nonexistent", "owner/repo")
@@ -88,7 +93,7 @@ index 1234567..abcdefg 100644
 
     def test_search_error(self):
         """Test search_code handles API errors gracefully"""
-        from unittest.mock import patch, Mock
+        from unittest.mock import patch
         with patch('src.tools.GitHubClient') as mock_cls:
             mock_cls.return_value.search_code.return_value = {"error": "API rate limit exceeded"}
             result = search_code("test", "owner/repo")
@@ -324,3 +329,219 @@ index 1234567..abcdefg 100644
 """
         issues = review_diff(diff)
         self.assertEqual(len(issues), 0)
+
+    # ── File tools ────────────────────────────────────
+
+    def test_get_file_contents_success(self):
+        with patch('src.tools.GitHubClient') as mock_cls:
+            mock_cls.return_value.get_file_contents.return_value = {
+                "path": "src/main.py", "sha": "abc1234567890", "size": 512,
+                "content": "def hello():\\n    return 'world'\\n",
+            }
+            result = get_file_contents("owner/repo", "src/main.py", ref="main")
+            self.assertIn("File: src/main.py (512 bytes", result)
+            self.assertIn("def hello():", result)
+            mock_cls.return_value.get_file_contents.assert_called_once_with(
+                "owner/repo", "src/main.py", "main"
+            )
+
+    def test_get_file_contents_error(self):
+        with patch('src.tools.GitHubClient') as mock_cls:
+            mock_cls.return_value.get_file_contents.return_value = {
+                "error": "not found"
+            }
+            result = get_file_contents("owner/repo", "missing.py")
+            self.assertEqual(result, "Error: not found")
+
+    def test_create_or_update_file_success(self):
+        with patch('src.tools.GitHubClient') as mock_cls, \
+                patch('src.tools._get_policy', return_value=self._allow_policy()), \
+                patch('src.tools._get_audit', return_value=self._audit()):
+            mock_cls.return_value.create_or_update_file.return_value = {
+                "commit_sha": "def4567890abc", "content_sha": "111222",
+                "path": "src/new.py",
+                "html_url": "https://github.com/owner/repo/blob/main/src/new.py",
+            }
+            result = create_or_update_file(
+                "owner/repo", "src/new.py", "print(1)",
+                message="Add new.py", branch="main",
+            )
+            self.assertIn("File written: src/new.py", result)
+            self.assertIn("def4567", result)
+            mock_cls.return_value.create_or_update_file.assert_called_once()
+
+    def test_create_or_update_file_policy_denied_and_dry_run(self):
+        denied = self._allow_policy()
+        denied.check_repo.return_value = PolicyDecision(
+            "deny", "blocked", "repo_allowlist:deny_unlisted"
+        )
+        with patch('src.tools._get_policy', return_value=denied), \
+                patch('src.tools._get_audit', return_value=self._audit()), \
+                patch('src.tools.GitHubClient') as mock_cls:
+            result = create_or_update_file("owner/repo", "x.py", "code")
+            self.assertIn("Policy Denied: blocked", result)
+            mock_cls.assert_not_called()
+
+        with patch('src.tools._get_policy', return_value=self._allow_policy()), \
+                patch('src.tools._get_audit', return_value=self._audit()), \
+                patch('src.tools.GitHubClient') as mock_cls:
+            result = create_or_update_file(
+                "owner/repo", "x.py", "code", dry_run=True
+            )
+            self.assertIn("[DRY RUN] Would write", result)
+            mock_cls.assert_not_called()
+
+    def test_create_or_update_file_error(self):
+        with patch('src.tools.GitHubClient') as mock_cls, \
+                patch('src.tools._get_policy', return_value=self._allow_policy()), \
+                patch('src.tools._get_audit', return_value=self._audit()):
+            mock_cls.return_value.create_or_update_file.return_value = {
+                "error": "rate limited"
+            }
+            result = create_or_update_file("owner/repo", "x.py", "code")
+            self.assertEqual(result, "Error: rate limited")
+
+    def test_push_files_success(self):
+        with patch('src.tools.GitHubClient') as mock_cls, \
+                patch('src.tools._get_policy', return_value=self._allow_policy()), \
+                patch('src.tools._get_audit', return_value=self._audit()):
+            mock_cls.return_value.push_files.return_value = {
+                "commit_sha": "abc1234567890", "branch": "main",
+                "files_changed": 2,
+                "files": ["src/a.py", "src/b.py"],
+            }
+            result = push_files(
+                "owner/repo", "main", "feat: add files",
+                '[{"path": "src/a.py", "content": "a"}, {"path": "src/b.py", "content": "b"}]',
+            )
+            self.assertIn("Pushed 2 file(s)", result)
+            self.assertIn("src/a.py", result)
+            self.assertIn("abc1234", result)
+
+    def test_push_files_invalid_json_and_empty(self):
+        with patch('src.tools._get_policy', return_value=self._allow_policy()), \
+                patch('src.tools._get_audit', return_value=self._audit()):
+            self.assertIn("Invalid files_json", push_files("owner/repo", "main", "msg", "{"))
+            self.assertIn("non-empty list", push_files("owner/repo", "main", "msg", "[]"))
+
+    def test_push_files_dry_run_and_policy_denied(self):
+        denied = self._allow_policy()
+        denied.check_repo.return_value = PolicyDecision("deny", "blocked", "")
+        with patch('src.tools._get_policy', return_value=denied), \
+                patch('src.tools._get_audit', return_value=self._audit()), \
+                patch('src.tools.GitHubClient') as mock_cls:
+            result = push_files(
+                "owner/repo", "main", "msg",
+                '[{"path": "a.py", "content": "x"}]',
+            )
+            self.assertIn("Policy Denied: blocked", result)
+            mock_cls.assert_not_called()
+
+        with patch('src.tools._get_policy', return_value=self._allow_policy()), \
+                patch('src.tools._get_audit', return_value=self._audit()), \
+                patch('src.tools.GitHubClient') as mock_cls:
+            result = push_files(
+                "owner/repo", "main", "msg",
+                '[{"path": "a.py", "content": "x"}]',
+                dry_run=True,
+            )
+            self.assertIn("[DRY RUN] Would push", result)
+            mock_cls.assert_not_called()
+
+    def test_push_files_error(self):
+        with patch('src.tools.GitHubClient') as mock_cls, \
+                patch('src.tools._get_policy', return_value=self._allow_policy()), \
+                patch('src.tools._get_audit', return_value=self._audit()):
+            mock_cls.return_value.push_files.return_value = {"error": "conflict"}
+            result = push_files(
+                "owner/repo", "main", "msg",
+                '[{"path": "a.py", "content": "x"}]',
+            )
+            self.assertEqual(result, "Error: conflict")
+
+    # ── Issue & PR lifecycle tools ─────────────────────
+
+    def test_add_issue_comment_success(self):
+        with patch('src.tools.GitHubClient') as mock_cls, \
+                patch('src.tools._get_policy', return_value=self._allow_policy()), \
+                patch('src.tools._get_audit', return_value=self._audit()):
+            mock_cls.return_value.add_issue_comment.return_value = {
+                "id": 7, "html_url": "https://github.com/owner/repo/issues/1#issuecomment-7",
+            }
+            result = add_issue_comment("owner/repo", 1, "Nice work!")
+            self.assertIn("Comment added:", result)
+            self.assertIn("issuecomment-7", result)
+
+    def test_add_issue_comment_policy_denied_and_dry_run(self):
+        denied = self._allow_policy()
+        denied.check_repo.return_value = PolicyDecision("deny", "blocked", "")
+        with patch('src.tools._get_policy', return_value=denied), \
+                patch('src.tools._get_audit', return_value=self._audit()), \
+                patch('src.tools.GitHubClient') as mock_cls:
+            result = add_issue_comment("owner/repo", 1, "body")
+            self.assertIn("Policy Denied: blocked", result)
+            mock_cls.assert_not_called()
+
+        with patch('src.tools._get_policy', return_value=self._allow_policy()), \
+                patch('src.tools._get_audit', return_value=self._audit()), \
+                patch('src.tools.GitHubClient') as mock_cls:
+            result = add_issue_comment("owner/repo", 1, "body", dry_run=True)
+            self.assertIn("[DRY RUN] Would comment", result)
+            mock_cls.assert_not_called()
+
+    def test_add_issue_comment_error(self):
+        with patch('src.tools.GitHubClient') as mock_cls, \
+                patch('src.tools._get_policy', return_value=self._allow_policy()), \
+                patch('src.tools._get_audit', return_value=self._audit()):
+            mock_cls.return_value.add_issue_comment.return_value = {"error": "locked"}
+            result = add_issue_comment("owner/repo", 1, "body")
+            self.assertEqual(result, "Error: locked")
+
+    def test_merge_pull_request_success(self):
+        with patch('src.tools.GitHubClient') as mock_cls, \
+                patch('src.tools._get_policy', return_value=self._allow_policy()), \
+                patch('src.tools._get_audit', return_value=self._audit()):
+            mock_cls.return_value.merge_pull_request.return_value = {
+                "merged": True, "sha": "abc1234567890", "message": "Pull request successfully merged",
+            }
+            result = merge_pull_request("owner/repo", 42, merge_method="squash")
+            self.assertIn("PR #42 merged", result)
+            self.assertIn("abc1234", result)
+            mock_cls.return_value.merge_pull_request.assert_called_once_with(
+                "owner/repo", 42, "", "squash"
+            )
+
+    def test_merge_pull_request_not_mergeable(self):
+        with patch('src.tools.GitHubClient') as mock_cls, \
+                patch('src.tools._get_policy', return_value=self._allow_policy()), \
+                patch('src.tools._get_audit', return_value=self._audit()):
+            mock_cls.return_value.merge_pull_request.return_value = {
+                "merged": False, "sha": "", "message": "Pull request is not mergeable",
+            }
+            result = merge_pull_request("owner/repo", 42)
+            self.assertIn("not merged", result)
+
+    def test_merge_pull_request_policy_denied_and_dry_run(self):
+        denied = self._allow_policy()
+        denied.check_repo.return_value = PolicyDecision("deny", "blocked", "")
+        with patch('src.tools._get_policy', return_value=denied), \
+                patch('src.tools._get_audit', return_value=self._audit()), \
+                patch('src.tools.GitHubClient') as mock_cls:
+            result = merge_pull_request("owner/repo", 42)
+            self.assertIn("Policy Denied: blocked", result)
+            mock_cls.assert_not_called()
+
+        with patch('src.tools._get_policy', return_value=self._allow_policy()), \
+                patch('src.tools._get_audit', return_value=self._audit()), \
+                patch('src.tools.GitHubClient') as mock_cls:
+            result = merge_pull_request("owner/repo", 42, dry_run=True)
+            self.assertIn("[DRY RUN] Would merge", result)
+            mock_cls.assert_not_called()
+
+    def test_merge_pull_request_error(self):
+        with patch('src.tools.GitHubClient') as mock_cls, \
+                patch('src.tools._get_policy', return_value=self._allow_policy()), \
+                patch('src.tools._get_audit', return_value=self._audit()):
+            mock_cls.return_value.merge_pull_request.return_value = {"error": "conflict"}
+            result = merge_pull_request("owner/repo", 42)
+            self.assertEqual(result, "Error: conflict")
