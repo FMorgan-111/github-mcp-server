@@ -68,4 +68,4 @@ git push origin :refs/tags/v0.2.0
 
 ## Current Version
 
-**v0.1.0** — Initial release (2026-06-07)
+**v0.2.0** — 5 new tools, bug fixes, gray-box test, architecture docs (2026-06-07)

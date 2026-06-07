@@ -21,7 +21,7 @@ Thank you for your interest in contributing! This document will guide you throug
 3. Install the package in editable mode along with dependencies:
    ```bash
    pip install -e .
-   pip install black ruff mypy
+   pip install ruff mypy
    ```
 
 ---
@@ -39,15 +39,16 @@ python3 -m pytest tests/ -v
 
 We use the following tools and configurations:
 
-- [Black](https://black.readthedocs.io/en/stable/) with max line length 120:
+- [ruff](https://github.com/charliermarsh/ruff) for both formatting and linting:
   ```bash
-  black --line-length=120 .
+  ruff check src/ tests/
+  ruff format src/ tests/
   ```
-- [ruff](https://github.com/charliermarsh/ruff) linter for Python code style compliance.
 - [mypy](https://mypy-lang.org/) with strict type checking:
   ```bash
   mypy --strict src/
   ```
+- Line length: 120 characters (configured in pyproject.toml)
 
 Please ensure these pass before submitting PRs.
 

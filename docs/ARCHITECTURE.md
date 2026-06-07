@@ -1,7 +1,7 @@
 # GitHub MCP Server — 技术架构与实现文档
 
 > 作者：傅茂根（Morgan Fu）
-> 版本：0.1.0
+> 版本：0.2.0
 > 更新时间：2026-06-07
 
 ---
@@ -210,7 +210,7 @@ FastMCP 自动处理：
 | `src/main.py` | 63 | 入口点，支持 stdio/HTTP 双传输模式，SIGTERM 优雅关闭 |
 | `src/tools.py` | 620 | 12 个 MCP 工具函数，策略守卫集成，审计日志集成 |
 | `src/github_client.py` | 328 | GitHub REST API 客户端（httpx），12 个 API 方法 |
-| `src/policy.py` | 204 | 策略引擎：仓库白名单、分支保护、热重载、通配符匹配 |
+| `src/policy.py` | 205 | 策略引擎：仓库白名单、分支保护、热重载、通配符匹配 |
 | `src/audit.py` | 120 | 审计日志：JSONL 输出、敏感信息脱敏、目录校验 |
 | `src/config.py` | 40 | 环境变量读取（GITHUB_TOKEN 等） |
 | `src/review_engine.py` | 83 | 审查编排器：diff 解析 → ruff 分析 → regex 回退 |
@@ -307,6 +307,8 @@ push_files(repo, branch, message, files)
 
 **安全默认：拒绝优先（deny-by-default）**
 
+> 注：仅在策略文件存在且 JSON 无效时拒绝所有。策略文件缺失时，若 `GITHUB_POLICY_REQUIRED=false` 则默认允许。
+
 ```
           有策略文件？
          /         \
@@ -325,7 +327,7 @@ push_files(repo, branch, message, files)
 ```python
 @dataclass
 class PolicyDecision:
-    action: str       # "allow" | "deny" | "dry_run"
+    action: str       # "allow" | "deny"
     reason: str       # 人类可读的解释
     matched_rule: str # 触发的规则名（用于审计）
 
@@ -595,9 +597,9 @@ self.headers = {
 
 ### 10.2 测试分层
 
-```
-106 tests, 1 xfail
-├── test_github_client.py (13 tests) — API 客户端层
+```text
+107 tests, 1 xfail
+├── test_github_client.py (14 tests) — API 客户端层
 │   ├── 方法调用参数验证
 │   ├── 错误处理路径
 │   └── Base64 编解码正确性
@@ -628,7 +630,7 @@ self.headers = {
 ├── test_config.py (3 tests) — 配置
 ├── test_main.py (4 tests) — 入口点
 ├── test_http_transport.py (3 tests) — HTTP 传输
-└── test_edge_cases.py (4 tests) — 边界情况
+├── test_edge_cases.py (5 tests) — 边界情况
 ```
 
 ### 10.3 Mock 工具客户端（FakeHttpxClient）
@@ -706,12 +708,12 @@ claude mcp add github-agent -- python3 /mnt/e/hermes-work/github-mcp-server/src/
 ### 11.3 Docker 部署
 
 ```dockerfile
-FROM python:3.12-slim
+FROM python:3.11-slim
 WORKDIR /app
 COPY src/ src/
 COPY pyproject.toml .
 RUN pip install --no-cache-dir fastmcp httpx python-dotenv
-CMD ["python3", "-m", "src.main"]
+ENTRYPOINT ["python3", "-m", "src.main"]
 ```
 
 ```bash

@@ -26,7 +26,7 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 - Write tools require policy approval before execution (repo allowlist + branch protection)
-- Invalid/missing policy defaults to **deny** (not allow)
+- Invalid/missing policy: invalid JSON defaults to deny (fail-safe); missing policy defaults to allow when GITHUB_POLICY_REQUIRED=false
 - Audit log write failures are reported to stderr (not silently dropped)
 - Oversized diffs (>hard cap) are rejected to prevent OOM
 
