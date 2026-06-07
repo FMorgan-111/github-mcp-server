@@ -2,7 +2,9 @@
 Gray-box workflow test for GitHub MCP Server new tools.
 Run: python3 workflow_test.py
 """
-import os, json, base64, sys
+import os
+import base64
+import sys
 import httpx
 
 ENV_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
@@ -45,9 +47,9 @@ def main():
 
         try:
             c.delete(f"{API}/repos/{REPO}/git/refs/heads/{BRANCH}", headers=HEADERS)
-            print(f"  Deleted old branch")
+            print("  Deleted old branch")
         except Exception:
-            print(f"  No old branch to delete")
+            print("  No old branch to delete")
 
         r = c.post(
             f"{API}/repos/{REPO}/git/refs",
@@ -168,7 +170,7 @@ def main():
             r.raise_for_status()
 
             print(f"  ✓ Commit: {new_commit_sha[:7]}")
-            print(f"  ✓ Files:  tests/gray_test_a.py, tests/gray_test_b.py")
+            print("  ✓ Files:  tests/gray_test_a.py, tests/gray_test_b.py")
             results["push_files"] = "PASS"
     except Exception as e:
         print(f"  ✗ FAIL: {str(e)[:200]}")
@@ -218,8 +220,8 @@ def main():
                 r.raise_for_status()
                 diff_text = r.text
                 lines = diff_text.split("\n")
-                added_files = [l[6:] for l in lines if l.startswith("+++ b/")]
-                added_lines = [l for l in lines if l.startswith("+") and not l.startswith("+++")]
+                added_files = [ln[6:] for ln in lines if ln.startswith("+++ b/")]
+                added_lines = [ln for ln in lines if ln.startswith("+") and not ln.startswith("+++")]
                 print(f"  ✓ Diff: {len(diff_text)} bytes, {len(added_files)} files, {len(added_lines)} lines added")
                 for f in added_files:
                     print(f"    • {f}")
