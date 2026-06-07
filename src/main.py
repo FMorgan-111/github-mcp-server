@@ -1,4 +1,5 @@
 """GitHub MCP Server entry point"""
+import argparse
 import atexit
 import os
 import sys
@@ -18,6 +19,25 @@ from src.tools import mcp, _stop_policy_watcher  # noqa: E402
 
 def main() -> None:
     """Run the MCP server"""
+    parser = argparse.ArgumentParser(
+        description="GitHub MCP Agent Server",
+        add_help=False,
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default="stdio",
+        help="Transport protocol (default: stdio)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port for HTTP transport (default: 8000)",
+    )
+    # Only parse known args so that subprocess/mcp arguments pass through
+    args, _ = parser.parse_known_args()
+
     try:
         # Handle SIGTERM gracefully for container environments
         def signal_handler(signum: int, frame: object) -> None:
@@ -26,7 +46,11 @@ def main() -> None:
 
         signal.signal(signal.SIGTERM, signal_handler)
         atexit.register(_stop_policy_watcher)
-        mcp.run(transport="stdio")
+
+        if args.transport == "http":
+            mcp.run(transport="http", port=args.port, json_response=True)
+        else:
+            mcp.run(transport="stdio")
     except KeyboardInterrupt:
         _stop_policy_watcher()
         sys.exit(0)

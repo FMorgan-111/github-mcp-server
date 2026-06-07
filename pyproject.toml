@@ -31,6 +31,12 @@ dependencies = [
     "python-dotenv",
 ]
 
+[project.optional-dependencies]
+http = [
+    "fastapi",
+    "uvicorn",
+]
+
 [project.urls]
 Homepage = "https://github.com/FMorgan-111/github-mcp-server"
 Repository = "https://github.com/FMorgan-111/github-mcp-server"
