@@ -32,7 +32,7 @@ def _get_max_diff_bytes() -> int:
 
 
 class ReviewService:
-    def __init__(self):
+    def __init__(self) -> None:
         self.analyzers = []
         try:
             self.analyzers.append(RuffAnalyzer())
@@ -54,7 +54,7 @@ class ReviewService:
                 source="review_engine",
             )]
 
-        findings = []
+        findings: list[Finding] = []
         changed = parse_diff(diff_text)
 
         # Ruff on changed Python files

@@ -4,7 +4,7 @@ import os
 import sys
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional, TextIO
 
 
 class AuditLogger:
@@ -23,7 +23,7 @@ class AuditLogger:
         """
         self.sink = sink
         self._validate_sink()
-        self._fobj: Optional[object] = None
+        self._fobj: TextIO | None = None
 
     def _validate_sink(self) -> None:
         if self.sink in ("stdout", "stderr"):
@@ -47,7 +47,7 @@ class AuditLogger:
                     f"GITHUB_AUDIT_DIR_ALLOWLIST ({allowlist_str})"
                 )
 
-    def _get_stream(self):
+    def _get_stream(self) -> TextIO:
         if self.sink == "stdout":
             return sys.stdout
         if self.sink == "stderr":
@@ -67,8 +67,8 @@ class AuditLogger:
         dry_run: bool = False,
         policy_decision: str = "allow",
         policy_rule: str = "",
-        request_body: Optional[dict] = None,
-        response: Optional[dict] = None,
+        request_body: Optional[dict[str, Any]] = None,
+        response: Optional[dict[str, Any]] = None,
         error: Optional[str] = None,
     ) -> None:
         """Write one audit entry."""
@@ -101,10 +101,10 @@ class AuditLogger:
             self._fobj = None
 
 
-def _redact(obj):
+def _redact(obj: object) -> Any:
     """Recursively redact sensitive keys from dicts and lists."""
     if isinstance(obj, dict):
-        out = {}
+        out: dict[str, Any] = {}
         for k, v in obj.items():
             if k.lower() in AuditLogger.REDACT_KEYS:
                 out[k] = "***REDACTED***"

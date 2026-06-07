@@ -9,11 +9,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.tools import mcp
 
 
-def main():
+def main() -> None:
     """Run the MCP server"""
     try:
         # Handle SIGTERM gracefully for container environments
-        def signal_handler(signum, frame):
+        def signal_handler(signum: int, frame: object) -> None:
             sys.exit(0)
 
         signal.signal(signal.SIGTERM, signal_handler)

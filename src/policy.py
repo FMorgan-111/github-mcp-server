@@ -3,7 +3,7 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Any
 
 # ── Data structures ────────────────────────────────────
 @dataclass
@@ -97,7 +97,7 @@ class PolicyConfig:
 
 
 # ── Helpers ────────────────────────────────────────────
-def _ensure_list(v) -> list:
+def _ensure_list(v: object) -> list[Any]:
     """Return v as a list, wrapping a single string if needed."""
     if v is None:
         return []

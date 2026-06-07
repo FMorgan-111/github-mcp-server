@@ -1,9 +1,9 @@
 """Local rule-based code review"""
 import re
-from typing import List, Dict
+from typing import Any
 
 
-def review_diff(diff_text: str) -> List[Dict]:
+def review_diff(diff_text: str) -> list[dict[str, Any]]:
     """Analyze diff text and return code review issues"""
     issues = []
     lines = diff_text.split('\n')

@@ -1,4 +1,6 @@
 """MCP tools for GitHub operations — with policy guard & audit logging."""
+from typing import Any, cast
+
 from fastmcp import FastMCP
 
 from .config import (
@@ -39,7 +41,7 @@ def _get_audit() -> AuditLogger:
 
 # ── Read tools (no guard needed) ───────────────────────
 @mcp.tool()
-def search_code(query: str, repo: str = None) -> str:
+def search_code(query: str, repo: str | None = None) -> str:
     """Search for code in GitHub repositories."""
     client = GitHubClient(get_github_token(), get_github_api_base())
     result = client.search_code(query, repo)
@@ -67,11 +69,13 @@ def list_issues(repo: str, state: str = "open") -> str:
     if "error" in result:
         return f"Error: {result['error']}"
 
-    if not result:
+    # GitHub API returns a list; cast for mypy since return type is dict
+    issues = cast(list[dict[str, Any]], result)
+    if not issues:
         return f"No {state} issues found in {repo}"
 
     output = []
-    for issue in result[:10]:
+    for issue in issues[:10]:
         output.append(f"#{issue['number']}: {issue['title']}\n  {issue['html_url']}")
 
     return f"Issues in {repo} ({state}):\n" + "\n\n".join(output)

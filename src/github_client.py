@@ -1,6 +1,6 @@
 """GitHub API client wrapper using httpx"""
 import httpx
-from typing import Optional, Dict, Any, List, Union
+from typing import Any
 
 
 class GitHubClient:
@@ -12,7 +12,7 @@ class GitHubClient:
             "X-GitHub-Api-Version": "2022-11-28",
         }
 
-    def search_code(self, query: str, repo: Optional[str] = None) -> Dict[str, Any]:
+    def search_code(self, query: str, repo: str | None = None) -> dict[str, Any]:
         try:
             q = f"repo:{repo} {query}" if repo else query
             with httpx.Client(timeout=20) as client:
@@ -22,7 +22,7 @@ class GitHubClient:
                     params={"q": q}
                 )
                 response.raise_for_status()
-                data = response.json()
+                data: dict[str, Any] = response.json()
                 return {
                     "items": [
                         {
@@ -36,7 +36,7 @@ class GitHubClient:
         except Exception as e:
             return {"error": f"Search failed: {str(e)}"}
 
-    def list_issues(self, repo: str, state: str = "open") -> Dict[str, Any]:
+    def list_issues(self, repo: str, state: str = "open") -> dict[str, Any]:
         try:
             with httpx.Client(timeout=20) as client:
                 response = client.get(
@@ -45,11 +45,12 @@ class GitHubClient:
                     params={"state": state}
                 )
                 response.raise_for_status()
-                return response.json()
+                result: dict[str, Any] = response.json()
+                return result
         except Exception as e:
             return {"error": f"List issues failed: {str(e)}"}
 
-    def create_issue(self, repo: str, title: str, body: str) -> Dict[str, Any]:
+    def create_issue(self, repo: str, title: str, body: str) -> dict[str, Any]:
         try:
             with httpx.Client(timeout=20) as client:
                 response = client.post(
@@ -58,11 +59,12 @@ class GitHubClient:
                     json={"title": title, "body": body}
                 )
                 response.raise_for_status()
-                return response.json()
+                result: dict[str, Any] = response.json()
+                return result
         except Exception as e:
             return {"error": f"Create issue failed: {str(e)}"}
 
-    def get_pr_diff(self, repo: str, pr_number: int) -> Dict[str, Any]:
+    def get_pr_diff(self, repo: str, pr_number: int) -> dict[str, Any]:
         try:
             headers = {**self.headers, "Accept": "application/vnd.github.v3.diff"}
             with httpx.Client(timeout=20) as client:
@@ -75,7 +77,7 @@ class GitHubClient:
         except Exception as e:
             return {"error": f"Get PR diff failed: {str(e)}"}
 
-    def create_pr(self, repo: str, title: str, body: str, head: str, base: str) -> Dict[str, Any]:
+    def create_pr(self, repo: str, title: str, body: str, head: str, base: str) -> dict[str, Any]:
         try:
             with httpx.Client(timeout=20) as client:
                 response = client.post(
@@ -84,17 +86,18 @@ class GitHubClient:
                     json={"title": title, "body": body, "head": head, "base": base}
                 )
                 response.raise_for_status()
-                return response.json()
+                result: dict[str, Any] = response.json()
+                return result
         except Exception as e:
             return {"error": f"Create PR failed: {str(e)}"}
 
     def create_review_comment(
         self, repo: str, pr_number: int, body: str,
         commit_id: str = "", path: str = "", line: int = 0
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Post a review comment on a PR line."""
         try:
-            payload = {"body": body}
+            payload: dict[str, Any] = {"body": body}
             if commit_id and path and line > 0:
                 payload["commit_id"] = commit_id
                 payload["path"] = path
@@ -106,6 +109,7 @@ class GitHubClient:
                     json=payload,
                 )
                 resp.raise_for_status()
-                return resp.json()
+                result: dict[str, Any] = resp.json()
+                return result
         except Exception as e:
             return {"error": f"Review comment failed: {str(e)}"}
