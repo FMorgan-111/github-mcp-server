@@ -107,18 +107,21 @@ python3 -m pytest tests/ -v
 python3 -m src.main
 ```
 
-23 tests, all passing.
+72 tests, all passing.
 
 ---
 
-## Deployment with Docker
+## Docker Deployment
 
 ```bash
 docker build -t github-mcp-server .
-docker run -e GITHUB_TOKEN=ghp_your_token_here -i github-mcp-server
+docker run \
+  -e GITHUB_TOKEN=ghp_your_token_here \
+  -i github-mcp-server
 ```
 
-The `-e GITHUB_TOKEN=...` flag passes the token into the container because the local `.env` file is not copied into the image.
+The `-e GITHUB_TOKEN=...` flag passes the token into the container because
+the local `.env` file is not copied into the image.
 
 ---
 
