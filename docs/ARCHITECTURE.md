@@ -20,8 +20,7 @@
 10. [测试体系](#10-测试体系)
 11. [部署方案](#11-部署方案)
 12. [与官方 GitHub MCP Server 的对比](#12-与官方-github-mcp-server-的对比)
-13. [面试话术](#13-面试话术)
-14. [灰度测试与 Debug 实战](#14-灰度测试与-debug-实战)
+13. [灰度测试与 Debug 实战](#13-灰度测试与-debug-实战)
 
 ---
 
@@ -932,41 +931,6 @@ Claude Opus 的代码分析能力远超 Sonnet。同样的问题，Sonnet 可能
 
 - `tests/workflow_test.py` — Hermes 直连 GitHub API 的集成测试脚本
 - CC Opus 命令：`ANTHROPIC_MODEL="claude-opus-4-20250514" claude -p --dangerously-skip-permissions "..."`
-
----
-
-## 15. 面试话术
-
-### 项目介绍（30 秒版）
-
-> 我做了一个 GitHub MCP Server，用 Python 写的，已经发布到 PyPI。它在 AI Agent 和 GitHub API 之间加了一层安全中间件：策略引擎控制 Agent 能访问哪些仓库、不能往哪些分支提 PR；审计日志记录每一步写操作，支持敏感信息脱敏。12 个 MCP 工具覆盖了读文件 → 写代码 → 批量提交 → 开 PR → Code Review → 合并的完整工作流。106 个单元测试全部通过，CI 覆盖 Python 3.10-3.12。
-
-### 技术亮点
-
-| 亮点 | 面试官角度 | 技术细节 |
-|------|-----------|---------|
-| 策略引擎 | "你知道安全很重要" | deny-by-default、通配符匹配、热重载、线程安全 |
-| 审计日志 | "你懂企业级需求" | JSONL 结构化、脱敏、目录白名单防护 |
-| 批量提交 | "你理解 Git 内部原理" | 自己实现了 Git Data API 6 步流程 |
-| 代码审查 | "你有工程品味" | ruff + regex 双层架构、diff 大小 OOM 防护 |
-| 测试体系 | "你写可维护代码" | 106 tests、FakeHttpxClient、分层测试 |
-| MCP 协议 | "你懂 AI 基础设施" | JSON-RPC 2.0、FastMCP 框架、双传输模式 |
-
-### 常见追问
-
-**Q: 为什么用 Python 而不是 Go？**
-
-> 选型时期考虑了三点：(1) MCP 生态中 Python 的 FastMCP 框架最成熟，开发效率远高于 Go；(2) 目标用户（AI Agent 开发者）更熟悉 Python，方便他们扩展自定义工具；(3) 策略引擎和审计日志的逻辑复杂度高，Python 的动态特性更适合快速迭代。性能方面，这个场景的瓶颈在 GitHub API 调用（网络 I/O），不在语言选择。
-
-**Q: 和官方 GitHub MCP Server 有什么区别？**
-
-> 官方做的是"把 GitHub 全部能力暴露给 AI"，我们做的是"给 AI 受控的 GitHub 能力"。两个关键差别：(1) 策略引擎 — 仓库白名单 + 分支保护，防止 Agent 误操作；(2) 审计日志 — 每一步写操作可追溯。这两个能力官方没有，因为 GitHub 自己做的话等于承认"AI Agent 不可信"，这在产品层面是不可能的。
-
-**Q: 如果让你重新设计，会改什么？**
-
-> (1) 加 GitHub App 认证 — PAT 方式颗粒度太粗，GitHub App 可以做到 per-repo 授权；(2) 策略引擎用 OPA（Open Policy Agent）而不是自定义 JSON — Rego 策略语言表达能力更强，且是业界标准；(3) 用 Pydantic 做输入参数验证 — 目前依赖 FastMCP 的默认校验，不够严格。
-
----
 
 ## 附录：术语表
 
